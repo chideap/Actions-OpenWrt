@@ -97,6 +97,7 @@ jobs:
       run: |
       
         cp -fv "${CONFIG_FILE}" openwrt/.config
+        cd openwrt && make defconfig
         
     - name: Download package
       working-directory: ./openwrt
