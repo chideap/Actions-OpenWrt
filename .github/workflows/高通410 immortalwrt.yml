@@ -100,13 +100,11 @@ jobs:
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
       
     - name: Download package
-      id: package
+      working-directory: ./openwrt
       run: |
-        cd openwrt
-        make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
+        make download V=s -j$(nproc) || { echo "Download failed"; exit 1; }
+        find dl -size -1024c -delete
+
 
     - name: 查看 openwrt 目录中的文件
       run: ls -la openwrt/
