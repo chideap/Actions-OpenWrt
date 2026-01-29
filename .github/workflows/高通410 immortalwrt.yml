@@ -88,12 +88,21 @@ jobs:
 
     - name: Install feeds
       run: cd openwrt && ./scripts/feeds install -a -f
-
+        
     - name: Load custom configuration
       run: |
         cp -r files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        cd openwrt && make defconfig
+        if [ -n "$CONFIG_FILE" ] && [ -e "$CONFIG_FILE" ]; then
+        mv "$CONFIG_FILE" openwrt/.config
+        fi
+    
+        cd openwrt
+    
+        ./scripts/feeds update -a
+    
+        ./scripts/feeds install -a
+    
+        make oldconfig
         
     - name: SSH connection to Actions
       uses: csexton/debugger-action@master
