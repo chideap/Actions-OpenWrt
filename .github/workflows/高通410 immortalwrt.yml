@@ -22,7 +22,7 @@ on:
         default: 'false'
 
 env:
-  REPO_URL: https://github.com/xuxin1955/immortalwrt
+  REPO_URL: https://github.com/lkiuyu/immortalwrt
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: config_small
@@ -91,13 +91,15 @@ jobs:
         fi
     
         cd openwrt
-    
+         
+        ./scripts/feeds update istore
+        
+        ./scripts/feeds install -d y -p istore luci-app-store
+        
         ./scripts/feeds update -a
     
-        ./scripts/feeds install -a -f
+        ./scripts/feeds install -a
     
-         make defconfig
-
         
     - name: SSH connection to Actions
       uses: csexton/debugger-action@master
@@ -106,6 +108,8 @@ jobs:
     - name: Download package
       working-directory: ./openwrt
       run: |
+        make defconfig
+        
         make download V=s -j$(nproc) || { echo "Download failed"; exit 1; }
         find dl -size -1024c -delete
 
