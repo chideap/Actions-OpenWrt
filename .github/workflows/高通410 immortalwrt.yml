@@ -99,7 +99,7 @@ jobs:
       run: |
        ./scripts/feeds update istore
        
-       ./scripts/feeds install -a -p istore
+       ./scripts/feeds install -d y -p istore luci-app-store
 
 
     - name: Update feeds
@@ -120,14 +120,19 @@ jobs:
       uses: csexton/debugger-action@master
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
       
-    - name: Config preparation
+    - name: Config defconfig
       id: config
       run: |
        cd openwrt
        make defconfig
-       yes "" | make oldconfig
-
-      
+       
+    
+    - name: Config oldconfig
+      id: config2
+      run: |
+       cd openwrt
+       make oldconfig
+       
     - name: Download package
       id: package
       run: |
