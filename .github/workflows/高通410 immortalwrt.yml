@@ -126,13 +126,6 @@ jobs:
        cd openwrt
        make defconfig
        
-    
-    - name: Config oldconfig
-      id: config2
-      run: |
-       cd openwrt
-       make oldconfig
-       
     - name: Download package
       id: package
       run: |
