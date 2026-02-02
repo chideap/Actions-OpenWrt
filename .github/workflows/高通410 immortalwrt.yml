@@ -146,18 +146,6 @@ jobs:
         
     - name: 查看 openwrt 根目录
       run: ls -la openwrt/
-      
-    - name: 准备配置
-      run: |
-        mkdir -p temp-config
-        cp openwrt/.config temp-config/
-        cp openwrt/feeds.conf.default temp-config/
-    
-    - name: 上传配置
-      uses: actions/upload-artifact@v4
-      with:
-        name: config-files
-        path: temp-config/
 
     - name: Compile the OpenWrt
       id: compile
