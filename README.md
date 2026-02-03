@@ -1,5 +1,31 @@
 高通骁龙410云编译immortalwrt
 
+CPU信息:
+
+型号: AMD EPYC 7763 64-Core Processor
+核心/线程: 4/4
+
+
+内存信息:
+
+物理内存: 15Gi (已用: 786Mi)
+
+虚拟内存: 3.0Gi
+
+存储信息:
+
+根分区: 总145G, 已用53G, 剩余92G
+
+系统信息:
+
+操作系统: Ubuntu 24.04.3 LTS
+
+内核版本: 6.11.0-1018-azure
+
+架构: x86_64
+
+资源 性能有限，请勿添加过多软件包！！！ 超6小时将自动断开
+
 固件主要添加超多 无线网卡驱动为目的!
 
 目前开启usb网络共享驱动
@@ -44,10 +70,23 @@ kmod-rtw88-8822cs
 
 kmod-rtw88-8822cu和rtl8812cu通用
 
+目前开启的aic系列网卡
 
+kmod-aic8800-usb
 
 需要其他插件自行通过config_small配置添加，注意同时开启对应依赖选项
 
+aic系列usb网卡从储存模式切换到WIFI模式命令！
+
+lsusb查看
+
+Bus 001 Device 014: ID a69c:5721 aicsemi Aic MSC
+
+把aic.json配置放到etc目录去
+
+ttyd终端执行命令 usbmode -s -c /etc/aic.json
+
+Bus 001 Device 015: ID 3625:0110 AICSemi AIC8800DC
 
 ![RTL8812CU网卡](https://qqbot.ugcimg.cn/1106413613/28efddef1be940bee43f05f27758994db2be56c8/916b254e6bf0605a98dadfce2eb6e89b)
 

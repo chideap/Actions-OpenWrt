@@ -22,10 +22,10 @@ on:
         default: 'false'
 
 env:
-  REPO_URL: https://github.com/lkiuyu/immortalwrt
+  REPO_URL: https://github.com/xuxin1955/immortalwrt
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config_small
+  CONFIG_FILE: 'config/config_small'
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: false
@@ -66,6 +66,19 @@ jobs:
       run: |
         sudo -E apt-get -y update
         sudo -E apt-get -y install $(curl -fsSL https://raw.githubusercontent.com/xuxin1955/depend_ubuntu2204_openwrt/refs/heads/main/depend_ubuntu2204_openwrt)
+        wget https://raw.githubusercontent.com/xuxin1955/depend_ubuntu2204_openwrt/main/mkbootimg_10.0.0+r36-9_all.deb
+        sudo dpkg -i mkbootimg_10.0.0+r36-9_all.deb
+        sudo apt-get install -f -y
+        # 验证安装
+        mkbootimg --help || true
+        MKBOOTIMG_PATH=$(which mkbootimg)
+        if [ -n "$MKBOOTIMG_PATH" ]; then
+        echo "mkbootimg found at: $MKBOOTIMG_PATH"
+        file "$MKBOOTIMG_PATH"
+        else
+        echo "❌ mkbootimg not found in PATH!"
+        fi
+
         sudo timedatectl set-timezone "$TZ"
         sudo chmod 777 /mnt
         df -hT
@@ -100,7 +113,7 @@ jobs:
        ./scripts/feeds update istore
        
        ./scripts/feeds install -d y -p istore luci-app-store
-
+        
 
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
@@ -115,6 +128,7 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
+        
         
     - name: SSH connection to Actions
       uses: csexton/debugger-action@master
@@ -136,6 +150,16 @@ jobs:
 
     - name: 查看 openwrt 目录中的文件
       run: ls -la openwrt/
+
+ 
+    - name: 自动上传编译配置
+      uses: actions/upload-artifact@v4
+      with:
+       name: build-config
+       path: |
+        openwrt/.config
+        openwrt/feeds.conf.default
+
 
     - name: Compile the firmware
       id: compile
@@ -205,12 +229,12 @@ jobs:
       uses: Mattraks/delete-workflow-runs@main
       with:
         retain_days: 0
-        keep_minimum_runs: 7
+        keep_minimum_runs: 3
     - name: Remove old Releases
       uses: dev-drprasad/delete-older-releases@master
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       with:
-        keep_latest: 7
+        keep_latest: 3
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
