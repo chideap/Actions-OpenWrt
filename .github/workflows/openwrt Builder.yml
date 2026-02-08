@@ -1,0 +1,261 @@
+name: openwrt Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: '源码仓库'
+        required: true
+        default: 'openwrt/openwrt'
+        type: string
+      source_branch:
+        description: '源码分支'
+        required: true
+        default: 'openwrt-25.12'
+        type: string
+      target:
+        description: '设备架构'
+        required: true
+        default: 'airoha'
+        type: string
+      subtarget:
+        description: '设备芯片'
+        required: true
+        default: 'an7581'
+        type: string
+      profile:
+        description: '设备型号'
+        required: true
+        default: 'bell_xg-040g-md'
+        type: string
+      packages:
+        description: '定制软件'
+        required: false
+        default: 'luci luci-app-minidlna luci-app-diskman luci-app-ksmbd luci-theme-argon'
+        type: string
+
+jobs:
+  build-firmware:
+    name: 构建 ${{ github.event.inputs.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.source_repo }}
+          ref: ${{ github.event.inputs.source_branch }}
+
+      - name: 初始化环境
+        run: |
+          echo "BUILD_TIME=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+          echo "TARGET=${{ github.event.inputs.target }}" >> $GITHUB_ENV
+          echo "SUBTARGET=${{ github.event.inputs.subtarget }}" >> $GITHUB_ENV
+          echo "PROFILE=${{ github.event.inputs.profile }}" >> $GITHUB_ENV
+          echo "PACKAGES=${{ github.event.inputs.packages }}" >> $GITHUB_ENV
+          echo "HOSTNAME=NetOS" >> $GITHUB_ENV
+          echo "DISTRO_NAME=NetOS" >> $GITHUB_ENV
+          echo "SUPPORT_INFO=WeChat 83826988" >> $GITHUB_ENV
+          
+          sudo mkdir -p /mnt/netos
+          sudo chown -R $(whoami):$(whoami) /mnt/netos
+          
+          mv ${{ github.workspace }} /mnt/netos/netos-src
+          ln -sfn /mnt/netos/netos-src ${{ github.workspace }}
+          
+          cd /mnt/netos/netos-src
+          
+          FEEDS_FILE=""
+          if [ -f "feeds.conf.default" ]; then
+            FEEDS_FILE="feeds.conf.default"
+          elif [ -f "feeds.conf" ]; then
+            FEEDS_FILE="feeds.conf"
+          fi
+          
+          if [ -z "$FEEDS_FILE" ]; then
+            echo "错误：未找到 feeds.conf.default 或 feeds.conf 文件"
+            exit 1
+          fi
+          
+          SOURCE_TYPE="openwrt"
+          
+          cp "$FEEDS_FILE" "$FEEDS_FILE.backup"
+          
+          if grep -q "immortalwrt" "$FEEDS_FILE.backup" 2>/dev/null; then
+            SOURCE_TYPE="immortalwrt"
+          fi
+          
+          echo "SOURCE_TYPE=$SOURCE_TYPE" >> $GITHUB_ENV
+          
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 0
+          git config --global http.lowSpeedTime 999999
+          git config --global core.compression 0
+          
+          CUSTOM_FEEDS=""
+          
+          if [ "$SOURCE_TYPE" = "openwrt" ]; then
+            sed -i \
+                -e 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' \
+                -e 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' \
+                -e 's|https://git.openwrt.org/feed/routing.git|https://github.com/openwrt/routing.git|g' \
+                -e 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' \
+                "$FEEDS_FILE"
+            
+            if ! grep -q "immortalwrt_packages" "$FEEDS_FILE"; then
+              echo "src-git immortalwrt_packages https://github.com/immortalwrt/packages" >> "$FEEDS_FILE"
+              CUSTOM_FEEDS="$CUSTOM_FEEDS immortalwrt_packages"
+            fi
+            
+            if ! grep -q "immortalwrt_luci" "$FEEDS_FILE"; then
+              echo "src-git immortalwrt_luci https://github.com/immortalwrt/luci" >> "$FEEDS_FILE"
+              CUSTOM_FEEDS="$CUSTOM_FEEDS immortalwrt_luci"
+            fi
+          fi
+          
+          echo "CUSTOM_FEEDS=\"$CUSTOM_FEEDS\"" >> $GITHUB_ENV
+          
+          FILES_DIR="/mnt/netos/netos-src/files"
+          UCI_DEFAULTS_DIR="$FILES_DIR/etc/uci-defaults"
+          mkdir -p "$UCI_DEFAULTS_DIR"
+          
+          UCI_SCRIPT="$UCI_DEFAULTS_DIR/88-netos-system"
+          
+          printf '#!/bin/sh\n' > "$UCI_SCRIPT"
+          printf 'uci set system.@system[0].hostname=\"NetOS\"\n' >> "$UCI_SCRIPT"
+          printf 'uci set system.@system[0].timezone=\"CST-8\"\n' >> "$UCI_SCRIPT"
+          printf 'uci set system.@system[0].zonename=\"Asia/Shanghai\"\n' >> "$UCI_SCRIPT"
+          printf 'uci set luci.main.lang=\"zh_cn\"\n' >> "$UCI_SCRIPT"
+          
+          if [ "$SOURCE_TYPE" = "openwrt" ]; then
+              printf 'if [ -f /etc/apk/repositories.d/distfeeds.list ]; then\n' >> "$UCI_SCRIPT"
+              printf '    sed -i \\\n' >> "$UCI_SCRIPT"
+              
+              if [ -n "$CUSTOM_FEEDS" ]; then
+                  for feed in $CUSTOM_FEEDS; do
+                      printf '        -e "/%s/d" \\\n' "$feed" >> "$UCI_SCRIPT"
+                  done
+              fi
+              
+              printf '        -e "s|https://downloads.openwrt.org|https://mirrors.pku.edu.cn/openwrt|g" \\\n' >> "$UCI_SCRIPT"
+              printf '        -e "s|http://downloads.openwrt.org|https://mirrors.pku.edu.cn/openwrt|g" \\\n' >> "$UCI_SCRIPT"
+              printf '        -e "/^$/d" \\\n' >> "$UCI_SCRIPT"
+              printf '        /etc/apk/repositories.d/distfeeds.list\n' >> "$UCI_SCRIPT"
+              printf '    apk update\n' >> "$UCI_SCRIPT"
+              printf 'fi\n' >> "$UCI_SCRIPT"
+          fi
+          
+          printf 'if uci commit; then\n' >> "$UCI_SCRIPT"
+          printf '    echo \"CST-8\" > /tmp/TZ\n' >> "$UCI_SCRIPT"
+          printf '    /etc/init.d/system reload >/dev/null 2>&1\n' >> "$UCI_SCRIPT"
+          printf '    /etc/init.d/uhttpd restart >/dev/null 2>&1\n' >> "$UCI_SCRIPT"
+          printf 'fi\n' >> "$UCI_SCRIPT"
+          printf 'exit 0\n' >> "$UCI_SCRIPT"
+          
+          chmod +x "$UCI_SCRIPT"
+
+      - name: 安装编译工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache fastjar file g++ gawk gettext git libacl1-dev libcap-dev libcurl4-openssl-dev libelf-dev libffi-dev libfuse-dev libgmp-dev libisl-dev libjansson-dev libjson-c-dev liblzma-dev liblzo2-dev liblua5.4-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpcre3-dev libpython3-dev libsqlite3-dev libssl-dev libtool libxml2-dev libz-dev libzstd-dev lua5.4 python3 python3-full python3-pip python3-setuptools python3-socks python3-unidecode rsync subversion swig time unzip wget zlib1g-dev zstd bison flex cmake ninja-build jq
+
+      - name: 准备编译环境
+        run: |
+          set -e
+          cd /mnt/netos/netos-src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          {
+            echo "CONFIG_TARGET_${{ env.TARGET }}=y"
+            echo "CONFIG_TARGET_${{ env.TARGET }}_${{ env.SUBTARGET }}=y"
+            echo "CONFIG_TARGET_${{ env.TARGET }}_${{ env.SUBTARGET }}_DEVICE_${{ env.PROFILE }}=y"
+          } > .config
+          
+          CONFIG_FILE="/mnt/netos/netos-src/.config"
+          
+          ALL_PACKAGES="${{ env.PACKAGES }}"
+          
+          if [ -n "$ALL_PACKAGES" ]; then
+            CLEANED_PACKAGES=$(echo "$ALL_PACKAGES" | xargs)
+            for pkg in $CLEANED_PACKAGES; do
+              [ -z "$pkg" ] && continue
+              sed -i "/CONFIG_PACKAGE_${pkg}=/d" "$CONFIG_FILE"
+              echo "CONFIG_PACKAGE_${pkg}=y" >> "$CONFIG_FILE"
+            done
+          fi
+          
+          make defconfig
+          
+          echo "CONFIG_VERSION_DIST=\"${{ env.DISTRO_NAME }}\"" >> "$CONFIG_FILE"
+          echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> "$CONFIG_FILE"
+          
+          grep '^CONFIG_PACKAGE_\(luci-app\|luci-theme\)-[^=]*=y' "$CONFIG_FILE" | sed 's/^CONFIG_PACKAGE_//' | sed 's/=y$//' | while read pkg; do
+            if [[ "$pkg" == luci-app-* ]]; then
+              app_name="${pkg#luci-app-}"
+              if grep -q "Package: luci-i18n-${app_name}-zh-cn" /mnt/netos/netos-src/feeds/luci.index 2>/dev/null || \
+                 grep -q "Package: luci-i18n-${app_name}-zh-cn" /mnt/netos/netos-src/feeds/immortalwrt_luci.index 2>/dev/null; then
+                echo "CONFIG_PACKAGE_luci-i18n-${app_name}-zh-cn=y" >> "$CONFIG_FILE"
+              fi
+            elif [[ "$pkg" == luci-theme-* ]]; then
+              theme_name="${pkg#luci-theme-}"
+              if grep -q "Package: luci-i18n-${theme_name}-zh-cn" /mnt/netos/netos-src/feeds/luci.index 2>/dev/null || \
+                 grep -q "Package: luci-i18n-${theme_name}-zh-cn" /mnt/netos/netos-src/feeds/immortalwrt_luci.index 2>/dev/null; then
+                echo "CONFIG_PACKAGE_luci-i18n-${theme_name}-zh-cn=y" >> "$CONFIG_FILE"
+              fi
+            fi
+          done
+          
+          if ! grep -q "^CONFIG_PACKAGE_luci-i18n-base-zh-cn=y$" "$CONFIG_FILE"; then
+            exit 1
+          fi
+
+      - name: 编译固件
+        run: |
+          set -e
+          cd /mnt/netos/netos-src
+          make download -j$(nproc) || make download -j1 V=s
+          make -j$(nproc) V=s
+
+      - name: 准备发布
+        if: success()
+        run: |
+          mkdir -p ${{ github.workspace }}/release_assets
+          cp -r /mnt/netos/netos-src/bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/* ${{ github.workspace }}/release_assets/
+          cp /mnt/netos/netos-src/.config ${{ github.workspace }}/release_assets/${{ env.PROFILE }}.config
+          
+          if [ -d "/mnt/netos/netos-src/bin/packages" ]; then
+            cd /mnt/netos/netos-src/bin
+            tar -czf ${{ github.workspace }}/release_assets/netos-${{ env.PROFILE }}-packages-${{ env.BUILD_TIME }}.tar.gz packages/
+          fi
+
+      - name: 上传固件
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: netos-${{ env.PROFILE }}-${{ env.BUILD_TIME }}
+          path: ${{ github.workspace }}/release_assets/
+          retention-days: 1
+
+      - name: 创建发布
+        if: success()
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.PROFILE }}-${{ env.BUILD_TIME }}
+          name: ${{ env.PROFILE }} ${{ env.BUILD_TIME }}
+          body: |
+            设备: ${{ env.PROFILE }}
+            架构: ${{ env.TARGET }}/${{ env.SUBTARGET }}
+            时区: Asia/Shanghai (CST-8)
+            技术支持: ${{ env.SUPPORT_INFO }}
+          files: |
+            ${{ github.workspace }}/release_assets/*.bin
+            ${{ github.workspace }}/release_assets/*.itb
+            ${{ github.workspace }}/release_assets/*.tar.gz
+          draft: false
+          prerelease: false
