@@ -17,7 +17,7 @@ on:
 
 env:
   CONFIG_FILE: 'config/040.config'
-  REPO_URL: https://github.com/Cairongzeng/openwrt/
+  REPO_URL: https://github.com/Cairongzeng/openwrt
   REPO_BRANCH: xg040gmd
   FEEDS_CONF: feeds.conf.default
   DIY_P4_SH: diy-part4.sh
